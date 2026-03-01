@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRYPT // File Encryption</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #030508;
+    --panel: #080d14;
+    --border: #0f2a1a;
+    --green: #00ff88;
+    --green-dim: #00cc6a;
+    --green-glow: rgba(0,255,136,0.15);
+    --green-faint: rgba(0,255,136,0.05);
+    --red: #ff3355;
+    --red-glow: rgba(255,51,85,0.15);
+    --cyan: #00d4ff;
+    --yellow: #ffd700;
+    --text: #8ab8a0;
+    --text-dim: #2a4a38;
+    --font-mono: 'Share Tech Mono', monospace;
+    --font-display: 'Orbitron', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--green);
+    font-family: var(--font-mono);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 30px 20px 60px;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  /* grid bg */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,255,136,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,255,136,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap { position: relative; z-index: 1; width: 100%; max-width: 780px; }
+
+  /* ── HEADER ── */
+  header { text-align: center; margin-bottom: 40px; }
+
+  .logo {
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 6vw, 3.5rem);
+    font-weight: 900;
+    letter-spacing: 0.2em;
+    color: var(--green);
+    text-shadow: 0 0 20px var(--green), 0 0 60px rgba(0,255,136,0.3);
+    animation: flicker 6s infinite;
+  }
+
+  .logo span { color: var(--cyan); text-shadow: 0 0 20px var(--cyan); }
+
+  .tagline {
+    font-size: 0.7rem;
+    letter-spacing: 0.3em;
+    color: var(--text-dim);
+    margin-top: 6px;
+    text-transform: uppercase;
+  }
+
+  @keyframes flicker {
+    0%,95%,100% { opacity: 1; }
+    96% { opacity: 0.85; }
+    97% { opacity: 1; }
+    98% { opacity: 0.9; }
+  }
+
+  /* ── PANEL ── */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-top: 1px solid rgba(0,255,136,0.2);
+    position: relative;
+    margin-bottom: 16px;
+  }
+
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--green), transparent);
+    opacity: 0.6;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.65rem;
+    letter-spacing: 0.25em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot-r { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .dot-y { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); }
+  .dot-g { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+  .panel-body { padding: 20px; }
+
+  /* ── MODE TOGGLE ── */
+  .mode-toggle {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    margin-bottom: 24px;
+    border: 1px solid var(--border);
+  }
+
+  .mode-btn {
+    padding: 14px;
+    background: transparent;
+    border: none;
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    letter-spacing: 0.2em;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    color: var(--text-dim);
+  }
+
+  .mode-btn.active-enc {
+    background: var(--green-faint);
+    color: var(--green);
+    text-shadow: 0 0 10px var(--green);
+  }
+
+  .mode-btn.active-dec {
+    background: var(--red-glow);
+    color: var(--red);
+    text-shadow: 0 0 10px var(--red);
+  }
+
+  .mode-btn:first-child { border-right: 1px solid var(--border); }
+
+  /* ── FORM ROWS ── */
+  .row { margin-bottom: 18px; }
+
+  label {
+    display: block;
+    font-size: 0.62rem;
+    letter-spacing: 0.25em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .field-wrap { position: relative; }
+
+  input[type="text"], input[type="file"], select, textarea {
+    width: 100%;
+    background: #050a0e;
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--green-dim);
+    color: var(--green);
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    padding: 10px 14px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    -webkit-appearance: none;
+  }
+
+  input[type="text"]:focus, select:focus {
+    border-color: var(--green);
+    box-shadow: 0 0 0 1px var(--green-glow), inset 0 0 20px rgba(0,255,136,0.02);
+  }
+
+  select { cursor: pointer; }
+  select option { background: #050a0e; }
+
+  .row-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .row-3col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+  /* ── FILE DROP ── */
+  .drop-zone {
+    border: 1px dashed var(--text-dim);
+    padding: 28px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    background: var(--green-faint);
+  }
+
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--green);
+    background: rgba(0,255,136,0.07);
+    box-shadow: inset 0 0 30px rgba(0,255,136,0.05);
+  }
+
+  .drop-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+  .drop-icon { font-size: 2rem; margin-bottom: 8px; opacity: 0.5; }
+  .drop-label { font-size: 0.75rem; color: var(--text); letter-spacing: 0.1em; }
+  .drop-sub { font-size: 0.6rem; color: var(--text-dim); margin-top: 4px; }
+  .drop-filename { font-size: 0.8rem; color: var(--cyan); margin-top: 6px; word-break: break-all; }
+
+  /* ── KEY SECTION ── */
+  .key-row { display: flex; gap: 8px; align-items: flex-end; }
+  .key-row input { flex: 1; }
+
+  .gen-btn {
+    padding: 10px 14px;
+    background: transparent;
+    border: 1px solid var(--green-dim);
+    color: var(--green-dim);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+  }
+
+  .gen-btn:hover {
+    border-color: var(--green);
+    color: var(--green);
+    box-shadow: 0 0 10px var(--green-glow);
+  }
+
+  /* ── SUBMIT BTN ── */
+  .submit-btn {
+    width: 100%;
+    padding: 16px;
+    font-family: var(--font-display);
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    border: none;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.2s;
+    margin-top: 8px;
+  }
+
+  .submit-btn.enc {
+    background: var(--green-faint);
+    border: 1px solid var(--green-dim);
+    color: var(--green);
+    text-shadow: 0 0 10px var(--green);
+  }
+
+  .submit-btn.dec {
+    background: var(--red-glow);
+    border: 1px solid rgba(255,51,85,0.4);
+    color: var(--red);
+    text-shadow: 0 0 10px var(--red);
+  }
+
+  .submit-btn:hover { filter: brightness(1.3); box-shadow: 0 0 20px currentColor; }
+
+  .submit-btn::after {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%;
+    width: 60%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
+    transition: left 0.4s;
+  }
+
+  .submit-btn:hover::after { left: 150%; }
+
+  /* ── TERMINAL LOG ── */
+  .terminal {
+    background: #020508;
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--cyan);
+    padding: 16px;
+    font-size: 0.75rem;
+    line-height: 1.8;
+    min-height: 140px;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
+  .terminal::-webkit-scrollbar { width: 4px; }
+  .terminal::-webkit-scrollbar-track { background: transparent; }
+  .terminal::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .log-line { display: flex; gap: 10px; }
+  .log-time { color: var(--text-dim); min-width: 70px; }
+  .log-msg { color: var(--text); }
+  .log-ok .log-msg { color: var(--green); }
+  .log-err .log-msg { color: var(--red); }
+  .log-info .log-msg { color: var(--cyan); }
+  .log-warn .log-msg { color: var(--yellow); }
+
+  .cursor-blink {
+    display: inline-block;
+    width: 8px; height: 13px;
+    background: var(--green);
+    animation: blink 1s step-end infinite;
+    vertical-align: middle;
+    margin-left: 2px;
+  }
+
+  @keyframes blink { 0%,100% { opacity:1 } 50% { opacity:0 } }
+
+  /* ── STATS ROW ── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--border);
+    margin-bottom: 16px;
+  }
+
+  .stat {
+    background: var(--panel);
+    padding: 12px 16px;
+    text-align: center;
+  }
+
+  .stat-val {
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    color: var(--green);
+    text-shadow: 0 0 10px var(--green-glow);
+  }
+
+  .stat-lbl {
+    font-size: 0.55rem;
+    letter-spacing: 0.2em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-top: 3px;
+  }
+
+  /* ── PROGRESS ── */
+  .progress-wrap {
+    height: 3px;
+    background: var(--border);
+    margin: 12px 0;
+    overflow: hidden;
+    display: none;
+  }
+
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--green), var(--cyan));
+    width: 0%;
+    transition: width 0.3s;
+    box-shadow: 0 0 8px var(--green);
+  }
+
+  .progress-wrap.active { display: block; }
+
+  /* ── HINT ── */
+  .hint {
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    margin-top: 5px;
+    letter-spacing: 0.05em;
+  }
+
+  .nonce-row { display: none; }
+  .nonce-row.visible { display: block; }
+
+  /* ── OUTPUT FILE DOWNLOAD ── */
+  .download-bar {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: rgba(0,255,136,0.04);
+    border: 1px solid var(--green-dim);
+    margin-top: 12px;
+    gap: 12px;
+  }
+
+  .download-bar.visible { display: flex; }
+
+  .dl-name { font-size: 0.8rem; color: var(--green); word-break: break-all; }
+
+  .dl-btn {
+    padding: 8px 16px;
+    background: var(--green-faint);
+    border: 1px solid var(--green-dim);
+    color: var(--green);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    cursor: pointer;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+    transition: all 0.2s;
+    text-decoration: none;
+  }
+
+  .dl-btn:hover { background: rgba(0,255,136,0.1); box-shadow: 0 0 10px var(--green-glow); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">CR<span>YP</span>T</div>
+    <div class="tagline">Recursive File Encryption Utility &nbsp;·&nbsp; CS 645/745</div>
+  </header>
+
+  <!-- STATS -->
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-val" id="stat-ops">0</div>
+      <div class="stat-lbl">Operations</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val" id="stat-bytes">0 B</div>
+      <div class="stat-lbl">Processed</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val" id="stat-algo">—</div>
+      <div class="stat-lbl">Last Cipher</div>
+    </div>
+  </div>
+
+  <!-- MAIN PANEL -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="dot dot-r"></div>
+      <div class="dot dot-y"></div>
+      <div class="dot dot-g"></div>
+      <span style="margin-left:6px">encrypt.py — GUI shell</span>
+    </div>
+    <div class="panel-body">
+
+      <!-- MODE TOGGLE -->
+      <div class="mode-toggle">
+        <button class="mode-btn active-enc" id="btn-enc" onclick="setMode('encrypt')">⬆ ENCRYPT</button>
+        <button class="mode-btn" id="btn-dec" onclick="setMode('decrypt')">⬇ DECRYPT</button>
+      </div>
+
+      <!-- FILE DROP -->
+      <div class="row">
+        <label>Input File</label>
+        <div class="drop-zone" id="dropZone">
+          <input type="file" id="fileInput" onchange="onFileSelect(this)">
+          <div class="drop-icon">⬡</div>
+          <div class="drop-label">Drop file here or click to browse</div>
+          <div class="drop-sub">Any file type accepted</div>
+          <div class="drop-filename" id="fileLabel"></div>
+        </div>
+      </div>
+
+      <!-- CIPHER + MODE -->
+      <div class="row row-2col">
+        <div>
+          <label>Cipher</label>
+          <select id="cipher" onchange="onCipherChange()">
+            <option value="aes">AES</option>
+            <option value="chacha20">ChaCha20</option>
+          </select>
+        </div>
+        <div id="mode-wrap">
+          <label>Mode</label>
+          <select id="mode">
+            <option value="ctr">CTR</option>
+            <option value="cbc">CBC</option>
+            <option value="ofb">OFB</option>
+            <option value="cfb">CFB</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- KEY SIZE + KEY -->
+      <div class="row">
+        <label>Key Size</label>
+        <select id="keysize" onchange="onKeysizeChange()">
+          <option value="16">128-bit</option>
+          <option value="24">192-bit</option>
+          <option value="32" selected>256-bit</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label>Key (hex)</label>
+        <div class="key-row">
+          <input type="text" id="keyInput" placeholder="Enter or generate a hex key..." spellcheck="false">
+          <button class="gen-btn" onclick="generateKey()">⟳ GENERATE</button>
+        </div>
+        <div class="hint" id="key-hint">64 hex chars required for 256-bit key</div>
+      </div>
+
+      <!-- NONCE (ChaCha20 only) -->
+      <div class="row nonce-row" id="nonce-row">
+        <label>Nonce — 128-bit (hex)</label>
+        <div class="key-row">
+          <input type="text" id="nonceInput" placeholder="32 hex chars..." spellcheck="false">
+          <button class="gen-btn" onclick="generateNonce()">⟳ GENERATE</button>
+        </div>
+        <div class="hint">ChaCha20 requires a 128-bit (16-byte) nonce</div>
+      </div>
+
+      <!-- PROGRESS -->
+      <div class="progress-wrap" id="progressWrap">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+
+      <!-- SUBMIT -->
+      <button class="submit-btn enc" id="submitBtn" onclick="run()">
+        ⬆ &nbsp; ENCRYPT FILE
+      </button>
+
+      <!-- DOWNLOAD -->
+      <div class="download-bar" id="downloadBar">
+        <div class="dl-name" id="dlName"></div>
+        <a class="dl-btn" id="dlLink" download>⬇ DOWNLOAD</a>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- TERMINAL LOG -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="dot dot-g"></div>
+      <span style="margin-left:6px">terminal output</span>
+    </div>
+    <div class="terminal" id="terminal">
+      <div class="log-line log-info">
+        <span class="log-time">00:00:00</span>
+        <span class="log-msg">CRYPT utility initialised. Awaiting input.</span>
+      </div>
+      <div class="log-line">
+        <span class="log-time"></span>
+        <span class="log-msg"><span class="cursor-blink"></span></span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── state ─────────────────────────────────────────────
+let mode = 'encrypt';
+let selectedFile = null;
+let ops = 0;
+let totalBytes = 0;
+
+// ── mode toggle ───────────────────────────────────────
+function setMode(m) {
+  mode = m;
+  const encBtn = document.getElementById('btn-enc');
+  const decBtn = document.getElementById('btn-dec');
+  const sub    = document.getElementById('submitBtn');
+  if (m === 'encrypt') {
+    encBtn.className = 'mode-btn active-enc';
+    decBtn.className = 'mode-btn';
+    sub.textContent = '⬆   ENCRYPT FILE';
+    sub.className = 'submit-btn enc';
+  } else {
+    encBtn.className = 'mode-btn';
+    decBtn.className = 'mode-btn active-dec';
+    sub.textContent = '⬇   DECRYPT FILE';
+    sub.className = 'submit-btn dec';
+  }
+  hideDownload();
+  log('info', `Mode set to ${m.toUpperCase()}`);
+}
+
+// ── cipher change ─────────────────────────────────────
+function onCipherChange() {
+  const c = document.getElementById('cipher').value;
+  const modeWrap  = document.getElementById('mode-wrap');
+  const nonceRow  = document.getElementById('nonce-row');
+  const keysz     = document.getElementById('keysize');
+
+  if (c === 'chacha20') {
+    modeWrap.style.opacity = '0.3';
+    modeWrap.style.pointerEvents = 'none';
+    nonceRow.classList.add('visible');
+    keysz.value = '32';
+    keysz.disabled = true;
+    document.getElementById('keysize').dispatchEvent(new Event('change'));
+    log('info', 'ChaCha20 selected — mode disabled, 256-bit key required');
+  } else {
+    modeWrap.style.opacity = '1';
+    modeWrap.style.pointerEvents = '';
+    nonceRow.classList.remove('visible');
+    keysz.disabled = false;
+    log('info', 'AES selected');
+  }
+}
+
+// ── key size ──────────────────────────────────────────
+function onKeysizeChange() {
+  const sz = parseInt(document.getElementById('keysize').value);
+  const bits = sz * 8;
+  const hexLen = sz * 2;
+  document.getElementById('key-hint').textContent = `${hexLen} hex chars required for ${bits}-bit key`;
+}
+
+// ── generate key ──────────────────────────────────────
+function generateKey() {
+  const sz = parseInt(document.getElementById('keysize').value);
+  const key = Array.from(crypto.getRandomValues(new Uint8Array(sz)))
+    .map(b => b.toString(16).padStart(2,'0')).join('');
+  document.getElementById('keyInput').value = key;
+  log('ok', `Generated ${sz*8}-bit key: ${key.slice(0,8)}...${key.slice(-4)}`);
+}
+
+function generateNonce() {
+  const n = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+    .map(b => b.toString(16).padStart(2,'0')).join('');
+  document.getElementById('nonceInput').value = n;
+  log('ok', `Generated 128-bit nonce: ${n.slice(0,8)}...`);
+}
+
+// ── file select ───────────────────────────────────────
+function onFileSelect(input) {
+  if (input.files[0]) {
+    selectedFile = input.files[0];
+    document.getElementById('fileLabel').textContent = `📄 ${selectedFile.name} (${fmtBytes(selectedFile.size)})`;
+    log('info', `File loaded: ${selectedFile.name} — ${fmtBytes(selectedFile.size)}`);
+    hideDownload();
+  }
+}
+
+// drag & drop
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault();
+  dz.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) {
+    selectedFile = f;
+    document.getElementById('fileLabel').textContent = `📄 ${f.name} (${fmtBytes(f.size)})`;
+    log('info', `File dropped: ${f.name} — ${fmtBytes(f.size)}`);
+    hideDownload();
+  }
+});
+
+// ── run ───────────────────────────────────────────────
+async function run() {
+  if (!selectedFile) { log('err', 'No file selected.'); return; }
+
+  const keyHex   = document.getElementById('keyInput').value.trim();
+  const cipher   = document.getElementById('cipher').value;
+  const modeVal  = document.getElementById('mode').value;
+  const nonceHex = document.getElementById('nonceInput').value.trim();
+  const sz = parseInt(document.getElementById('keysize').value);
+
+  // validate key
+  if (!/^[0-9a-fA-F]+$/.test(keyHex) || keyHex.length !== sz * 2) {
+    log('err', `Key must be exactly ${sz*2} hex chars (${sz*8}-bit). Got ${keyHex.length}.`);
+    return;
+  }
+
+  if (cipher === 'chacha20' && (!/^[0-9a-fA-F]{32}$/.test(nonceHex))) {
+    log('err', 'ChaCha20 requires a 32-char hex nonce (128-bit).');
+    return;
+  }
+
+  const keyBytes = hexToBytes(keyHex);
+  log('info', `Starting ${mode.toUpperCase()} — ${cipher.toUpperCase()}${cipher==='aes' ? '-'+modeVal.toUpperCase() : ''} / ${sz*8}-bit key`);
+
+  // progress
+  showProgress();
+  await animateProgress(0, 30, 150);
+
+  const fileBytes = new Uint8Array(await selectedFile.arrayBuffer());
+  await animateProgress(30, 60, 100);
+
+  let result, outName;
+  try {
+    if (mode === 'encrypt') {
+      result  = await encryptBytes(fileBytes, cipher, modeVal, keyBytes, nonceHex);
+      outName = selectedFile.name + '.enc';
+    } else {
+      result  = await decryptBytes(fileBytes, cipher, modeVal, keyBytes);
+      outName = selectedFile.name.endsWith('.enc')
+        ? selectedFile.name.slice(0, -4)
+        : selectedFile.name + '.dec';
+    }
+  } catch(e) {
+    log('err', 'Crypto error: ' + e.message);
+    hideProgress();
+    return;
+  }
+
+  await animateProgress(60, 100, 150);
+
+  // update stats
+  ops++;
+  totalBytes += fileBytes.length;
+  document.getElementById('stat-ops').textContent = ops;
+  document.getElementById('stat-bytes').textContent = fmtBytes(totalBytes);
+  document.getElementById('stat-algo').textContent =
+    cipher === 'aes' ? `AES-${modeVal.toUpperCase()}` : 'CHA20';
+
+  // offer download
+  const blob = new Blob([result]);
+  const url  = URL.createObjectURL(blob);
+  document.getElementById('dlName').textContent = outName;
+  const dl = document.getElementById('dlLink');
+  dl.href = url;
+  dl.download = outName;
+  document.getElementById('downloadBar').classList.add('visible');
+
+  hideProgress();
+  log('ok', `${mode === 'encrypt' ? 'Encrypted' : 'Decrypted'}: ${selectedFile.name} → ${outName} (${fmtBytes(result.byteLength)})`);
+}
+
+// ── crypto (WebCrypto API) ────────────────────────────
+async function encryptBytes(data, cipher, modeVal, keyBytes, nonceHex) {
+  if (cipher === 'chacha20') {
+    // Browser doesn't have ChaCha20-Poly1305 natively in all versions;
+    // we simulate with XOR stream via a seed for demo, or use AES-CTR as fallback note
+    // For real use this GUI generates the command to run with encrypt.py
+    return chacha20Encrypt(data, keyBytes, hexToBytes(nonceHex));
+  }
+
+  const algo = modeVal === 'ctr' ? 'AES-CTR' : modeVal === 'cbc' ? 'AES-CBC' : 'AES-CBC';
+  const iv = crypto.getRandomValues(new Uint8Array(16));
+
+  if (modeVal === 'ctr') {
+    const k = await crypto.subtle.importKey('raw', keyBytes, {name:'AES-CTR'}, false, ['encrypt']);
+    const ct = await crypto.subtle.encrypt({name:'AES-CTR', counter: iv, length: 64}, k, data);
+    const out = new Uint8Array(16 + ct.byteLength);
+    out.set(iv, 0);
+    out.set(new Uint8Array(ct), 16);
+    return out.buffer;
+  }
+
+  if (modeVal === 'cbc') {
+    const padded = pkcs7pad(data);
+    const k = await crypto.subtle.importKey('raw', keyBytes, {name:'AES-CBC'}, false, ['encrypt']);
+    const ct = await crypto.subtle.encrypt({name:'AES-CBC', iv}, k, padded);
+    const out = new Uint8Array(16 + ct.byteLength);
+    out.set(iv, 0);
+    out.set(new Uint8Array(ct), 16);
+    return out.buffer;
+  }
+
+  // OFB / CFB — implement via CTR approximation for browser demo
+  // (encrypt.py handles these correctly server-side)
+  return xorStreamEncrypt(data, keyBytes, iv, modeVal);
+}
+
+async function decryptBytes(data, cipher, modeVal, keyBytes) {
+  const iv = data.slice(0, 16);
+  const ct = data.slice(16);
+
+  if (cipher === 'chacha20') {
+    return chacha20Encrypt(ct, keyBytes, iv).buffer;
+  }
+
+  if (modeVal === 'ctr') {
+    const k = await crypto.subtle.importKey('raw', keyBytes, {name:'AES-CTR'}, false, ['decrypt']);
+    return crypto.subtle.decrypt({name:'AES-CTR', counter: iv, length: 64}, k, ct);
+  }
+
+  if (modeVal === 'cbc') {
+    const k = await crypto.subtle.importKey('raw', keyBytes, {name:'AES-CBC'}, false, ['decrypt']);
+    const pt = await crypto.subtle.decrypt({name:'AES-CBC', iv}, k, ct);
+    return pt;
+  }
+
+  return xorStreamDecrypt(ct, keyBytes, iv, modeVal);
+}
+
+// ── ChaCha20 pure JS ──────────────────────────────────
+function chacha20Encrypt(data, key, nonce) {
+  // Minimal ChaCha20 implementation matching Python's ChaCha20(key, nonce)
+  function rotl32(v, n) { return ((v << n) | (v >>> (32-n))) >>> 0; }
+  function quarterRound(s, a, b, c, d) {
+    s[a] = (s[a]+s[b])>>>0; s[d] ^= s[a]; s[d] = rotl32(s[d],16);
+    s[c] = (s[c]+s[d])>>>0; s[b] ^= s[c]; s[b] = rotl32(s[b],12);
+    s[a] = (s[a]+s[b])>>>0; s[d] ^= s[a]; s[d] = rotl32(s[d], 8);
+    s[c] = (s[c]+s[d])>>>0; s[b] ^= s[c]; s[b] = rotl32(s[b], 7);
+  }
+  function block(key, counter, nonce) {
+    const c = [0x61707865,0x3320646e,0x79622d32,0x6b206574];
+    const kw = new Uint32Array(key.buffer, key.byteOffset, 8);
+    // nonce layout for Python: full 16 bytes, first 4 = counter LE, next 12 = nonce
+    const nv = new DataView(nonce.buffer, nonce.byteOffset);
+    const s = [
+      c[0],c[1],c[2],c[3],
+      kw[0],kw[1],kw[2],kw[3],
+      kw[4],kw[5],kw[6],kw[7],
+      counter>>>0,
+      nv.getUint32(4,true), nv.getUint32(8,true), nv.getUint32(12,true)
+    ];
+    const w = [...s];
+    for (let i=0;i<10;i++) {
+      quarterRound(w,0,4,8,12); quarterRound(w,1,5,9,13);
+      quarterRound(w,2,6,10,14); quarterRound(w,3,7,11,15);
+      quarterRound(w,0,5,10,15); quarterRound(w,1,6,11,12);
+      quarterRound(w,2,7,8,13); quarterRound(w,3,4,9,14);
+    }
+    return w.map((v,i)=>(v+s[i])>>>0);
+  }
+  const out = new Uint8Array(data.length);
+  for (let i=0; i<data.length; i+=64) {
+    const blk = block(key, (i/64)|0, nonce);
+    const bytes = new Uint8Array(new Uint32Array(blk).buffer);
+    for (let j=0; j<64 && i+j<data.length; j++) out[i+j] = data[i+j] ^ bytes[j];
+  }
+  const result = new Uint8Array(16 + out.length);
+  result.set(nonce, 0);
+  result.set(out, 16);
+  return result;
+}
+
+// ── helpers ───────────────────────────────────────────
+function pkcs7pad(data) {
+  const pad = 16 - (data.length % 16);
+  const out = new Uint8Array(data.length + pad);
+  out.set(data);
+  out.fill(pad, data.length);
+  return out;
+}
+
+async function xorStreamEncrypt(data, keyBytes, iv, modeLabel) {
+  // fallback: AES-CTR approximation for OFB/CFB browser demo
+  const k = await crypto.subtle.importKey('raw', keyBytes, {name:'AES-CTR'}, false, ['encrypt']);
+  const ct = await crypto.subtle.encrypt({name:'AES-CTR', counter: iv, length: 64}, k, data);
+  const out = new Uint8Array(16 + ct.byteLength);
+  out.set(iv, 0); out.set(new Uint8Array(ct), 16);
+  log('warn', `Note: ${modeLabel.toUpperCase()} uses CTR approximation in browser. Use encrypt.py for exact mode.`);
+  return out.buffer;
+}
+
+async function xorStreamDecrypt(ct, keyBytes, iv, modeLabel) {
+  const k = await crypto.subtle.importKey('raw', keyBytes, {name:'AES-CTR'}, false, ['decrypt']);
+  return crypto.subtle.decrypt({name:'AES-CTR', counter: iv, length: 64}, k, ct);
+}
+
+function hexToBytes(hex) {
+  const b = new Uint8Array(hex.length / 2);
+  for (let i=0;i<b.length;i++) b[i] = parseInt(hex.substr(i*2,2),16);
+  return b;
+}
+
+function fmtBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n/1024).toFixed(1) + ' KB';
+  return (n/1048576).toFixed(2) + ' MB';
+}
+
+// ── terminal log ──────────────────────────────────────
+function log(type, msg) {
+  const t = document.getElementById('terminal');
+  const cursor = t.querySelector('.cursor-blink');
+  if (cursor) cursor.parentElement.parentElement.remove();
+
+  const now = new Date();
+  const ts = [now.getHours(),now.getMinutes(),now.getSeconds()]
+    .map(n=>String(n).padStart(2,'0')).join(':');
+
+  const line = document.createElement('div');
+  line.className = `log-line log-${type}`;
+  line.innerHTML = `<span class="log-time">${ts}</span><span class="log-msg">${msg}</span>`;
+  t.appendChild(line);
+
+  const cur = document.createElement('div');
+  cur.className = 'log-line';
+  cur.innerHTML = `<span class="log-time"></span><span class="log-msg"><span class="cursor-blink"></span></span>`;
+  t.appendChild(cur);
+  t.scrollTop = t.scrollHeight;
+}
+
+// ── progress ──────────────────────────────────────────
+function showProgress() {
+  document.getElementById('progressWrap').classList.add('active');
+  document.getElementById('progressBar').style.width = '0%';
+}
+
+function hideProgress() {
+  setTimeout(() => {
+    document.getElementById('progressWrap').classList.remove('active');
+  }, 500);
+}
+
+async function animateProgress(from, to, ms) {
+  const bar = document.getElementById('progressBar');
+  const steps = 20;
+  const delay = ms / steps;
+  for (let i=0;i<=steps;i++) {
+    bar.style.width = (from + (to-from)*(i/steps)) + '%';
+    await new Promise(r=>setTimeout(r,delay));
+  }
+}
+
+function hideDownload() {
+  document.getElementById('downloadBar').classList.remove('visible');
+}
+</script>
+</body>
+</html>

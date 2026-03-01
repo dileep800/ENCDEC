@@ -1,14 +1,10 @@
 # CRYPT — Recursive File Encryption Utility
 
-> CS 645/745: Modern Cryptography — Dr. Yuliang Zheng
-
-A recursive file encryption utility supporting **AES** (CBC, CTR, OFB, CFB) and **ChaCha20**, built with Python's [`cryptography`](https://cryptography.io) package. Includes a terminal CLI and a browser-based GUI.
-
----
+A symmetric encryption utility implementing AES-256 and ChaCha20 stream cipher with recursive directory traversal, IV randomization, and a zero-dependency browser-side WebCrypto GUI
 
 ## Live Demo
 
-🌐 **[Open GUI →](https://yourusername.github.io/crypt)**
+🌐 **[Open GUI →](https://d3sec.github.io/encdec)**
 
 ---
 
